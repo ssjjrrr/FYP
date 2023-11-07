@@ -38,16 +38,6 @@ def get_distance(trig,echo):
 	
 	distance = round(pulse_duration*34000/2,5)
 	return distance
-
-TRIG, ECHO = init_GPIO()
-
-while True:
-	distance1 = get_distance(TRIG[0],ECHO[0])
-	distance2 = get_distance(TRIG[1],ECHO[1])
-
-	print(f"sensor1:{distance1}cm")
-	print(f"sensor2:{distance2}cm")
-	time.sleep(0.5)
 	
 GPIO.cleanup()
 
