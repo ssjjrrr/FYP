@@ -1,2 +1,6 @@
 # 忽略.vscode文件夹
 .vscode/
+*__pycache__*
+cv/
+map_saved/
+
