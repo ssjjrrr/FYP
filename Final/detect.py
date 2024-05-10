@@ -104,28 +104,33 @@ def infer_img(img0,net,model_h,model_w,nl,na,stride,anchor_grid,thred_nms=0.4,th
 
 def video_process():
     # 模型加载
-    model_pb_path = "stick.onnx"
+    model_pb_path = "best.onnx"
     so = ort.SessionOptions()
     net = ort.InferenceSession(model_pb_path, so)
     # 标签字典
     dic_labels= {0:'crossing',
             1:'red',
             2:'green',
-            3:'stairs'}
+            }
     # 模型参数
-    model_h = 320
-    model_w = 320
+    model_h = 640
+    model_w = 640
     nl = 3
     na = 3
     stride=[8.,16.,32.]
     anchors = [[10, 13, 16, 30, 33, 23], [30, 61, 62, 45, 59, 119], [116, 90, 156, 198, 373, 326]]
     anchor_grid = np.asarray(anchors, dtype=np.float32).reshape(nl, -1, 2)
-    video = 0
+    video = '/home/jerryshek/work/yolov5/video_outdoor.mp4'
     cap = cv2.VideoCapture(video)
     flag_det = True
-    
+    cnt = 5
     while True:
         success, img0 = cap.read()
+        if cnt != 0:
+            cnt -= 1
+            continue
+        else:
+            cnt = 20
         if success:
             if flag_det:
                 t1 = time.time()
@@ -148,4 +153,3 @@ def video_process():
     
 if __name__ == "__main__":
     video_process()
-
