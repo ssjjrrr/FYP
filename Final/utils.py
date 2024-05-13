@@ -1,27 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
-'''=================================================
-@File   :utils.py
-@IDE    :PyCharm
-@Author :gpwang
-@Date   :2022/1/21
-@Desc   :yolov5的一些处理工具
-=================================================='''
 import numpy as np
 import cv2
 
 
 def letterbox(img, new_shape=(640, 640), auto=False, scaleFill=False, scaleUp=True):
-    """
-    python的信封图片缩放
-    :param img: 原图
-    :param new_shape: 缩放后的图片
-    :param color: 填充的颜色
-    :param auto: 是否为自动
-    :param scaleFill: 填充
-    :param scaleUp: 向上填充
-    :return:
-    """
+    
     shape = img.shape[:2]  # current shape[height,width]
     if isinstance(new_shape, int):
         new_shape = (new_shape, new_shape)
@@ -49,12 +33,7 @@ def letterbox(img, new_shape=(640, 640), auto=False, scaleFill=False, scaleUp=Tr
 
 
 def clip_coords(boxes, img_shape):
-    """
-    图片的边界处理
-    :param boxes: 检测框
-    :param img_shape: 图片的尺寸
-    :return:
-    """
+    
     boxes[:, 0].clip(0, img_shape[1])  # x1
     boxes[:, 1].clip(0, img_shape[0])  # y1
     boxes[:, 2].clip(0, img_shape[1])  # x2
@@ -62,14 +41,7 @@ def clip_coords(boxes, img_shape):
 
 
 def scale_coords(img1_shape, coords, img0_shape, ratio_pad=None):
-    """
-    坐标还原
-    :param img1_shape: 旧图像的尺寸
-    :param coords: 坐标
-    :param img0_shape:新图像的尺寸
-    :param ratio_pad: 填充率
-    :return:
-    """
+
     if ratio_pad is None:  # 从img0_shape中计算
         gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain=old/new
         pad = (img1_shape[1] - img0_shape[1] * gain) / 2, (img1_shape[0] - img0_shape[0] * gain) / 2

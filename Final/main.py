@@ -2,14 +2,14 @@ import RPi.GPIO as GPIO
 import time
 import multiprocessing as mp
 import smbus
-import detect
+import FYP.Final.detect_lite as detect_lite
 import map_html
 import message
 import sql_connect as sql
-# from Ali_IoT import iot, message
+from Ali_IoT import iot, ali_message
 
 def run_video_process():
-    detect.video_process()
+    detect_lite.video_process()
 
 def run_iot_process():
     iot.iot_process()

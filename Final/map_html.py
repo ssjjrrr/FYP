@@ -27,7 +27,7 @@ def open_GPS(port='/dev/ttyUSB2', baud_rate=115200):
 # 创建地图对象
 def map_process():
     open_GPS()
-    map_obj = folium.Map(location=[0, 0], zoom_start=10)  # 初始化地图位置
+    map_obj = folium.Map(location=[0, 0], zoom_start=10)  # 初始化地图
 
     while True:
         # 获取位置信息

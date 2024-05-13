@@ -1,21 +1,92 @@
+#!/usr/bin/env python
+# -*- coding: UTF-8 -*-
+
 import cv2
-import numpy as np
-import onnxruntime as ort
+import onnxruntime
+import argparse
+import random
 import time
+import pyttsx3
+import numpy as np
+
+from utils import letterbox, scale_coords
+
+
+class Detector():
+
+    def __init__(self, opt):
+        super(Detector, self).__init__()
+        self.img_size = opt.img_size
+        self.threshold = opt.conf_thres
+        self.iou_thres = opt.iou_thres
+        self.stride = 1
+        self.weights = opt.weights
+        self.init_model()
+        self.names = ['crossing', 'green','red', 'stairs']
+
+    def init_model(self):
+        
+        sess = onnxruntime.InferenceSession(self.weights)  # 加载模型权重
+        self.input_name = sess.get_inputs()[0].name  # 获得输入节点
+        output_names = []
+        for i in range(len(sess.get_outputs())):
+            print("output node:", sess.get_outputs()[i].name)
+            output_names.append(sess.get_outputs()[i].name)  # 所有的输出节点
+        print(output_names)
+        self.output_name = sess.get_outputs()[0].name  # 获得输出节点的名称
+        print(f"input name {self.input_name}-----output_name{self.output_name}")
+        input_shape = sess.get_inputs()[0].shape  # 输入节点形状
+        print("input_shape:", input_shape)
+        self.m = sess
+
+    def preprocess(self, img):
+        
+        img0 = img.copy()
+        img = letterbox(img, new_shape=self.img_size)[0]  # 图片预处理
+        img = img[:, :, ::-1].transpose(2, 0, 1)
+        img = np.ascontiguousarray(img).astype(np.float32)
+        img /= 255.0
+        img = np.expand_dims(img, axis=0)
+        assert len(img.shape) == 4
+        return img0, img
+
+    def detect(self, im):
+        
+        img0, img = self.preprocess(im)
+        pred = self.m.run(None, {self.input_name: img})[0]  # 执行推理
+        pred = pred.astype(np.float32)
+        pred = np.squeeze(pred, axis=0)
+        boxes = []
+        classIds = []
+        confidences = []
+        for detection in pred:
+            scores = detection[5:]
+            classID = np.argmax(scores)
+            confidence = scores[classID] * detection[4]  # 置信度为类别的概率和目标框概率值得乘积
+
+            if confidence > self.threshold:
+                box = detection[0:4]
+                (centerX, centerY, width, height) = box.astype("int")
+                x = int(centerX - (width / 2))
+                y = int(centerY - (height / 2))
+                boxes.append([x, y, int(width), int(height)])
+                classIds.append(classID)
+                confidences.append(float(confidence))
+        idxs = cv2.dnn.NMSBoxes(boxes, confidences, self.threshold, self.iou_thres)  # 执行nms算法
+        pred_boxes = []
+        pred_confes = []
+        pred_classes = []
+        if len(idxs) > 0:
+            for i in idxs.flatten():
+                confidence = confidences[i]
+                if confidence >= self.threshold:
+                    pred_boxes.append(boxes[i])
+                    pred_confes.append(confidence)
+                    pred_classes.append(classIds[i])
+        return im, pred_boxes, pred_confes, pred_classes
+
 
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):
-    """
-    description: Plots one bounding box on image img,
-                 this function comes from YoLov5 project.
-    param: 
-        x:      a box likes [x1,y1,x2,y2]
-        img:    a opencv image object
-        color:  color to draw rectangle, such as (0,255,0)
-        label:  str
-        line_thickness: int
-    return:
-        no return
-    """
     tl = (
         line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1
     )  # line/font thickness
@@ -38,118 +109,72 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None):
             lineType=cv2.LINE_AA,
         )
 
-def _make_grid( nx, ny):
-        xv, yv = np.meshgrid(np.arange(ny), np.arange(nx))
-        return np.stack((xv, yv), 2).reshape((-1, 2)).astype(np.float32)
+def main(opt):
+    engine = pyttsx3.init()
+    # engine.say("Welcome to the yolov5_ort demo")
+    # engine.runAndWait()
 
-def cal_outputs(outs,nl,na,model_w,model_h,anchor_grid,stride):
-    
-    row_ind = 0
-    grid = [np.zeros(1)] * nl
-    for i in range(nl):
-        h, w = int(model_w/ stride[i]), int(model_h / stride[i])
-        length = int(na * h * w)
-        if grid[i].shape[2:4] != (h, w):
-            grid[i] = _make_grid(w, h)
-
-        outs[row_ind:row_ind + length, 0:2] = (outs[row_ind:row_ind + length, 0:2] * 2. - 0.5 + np.tile(
-            grid[i], (na, 1))) * int(stride[i])
-        outs[row_ind:row_ind + length, 2:4] = (outs[row_ind:row_ind + length, 2:4] * 2) ** 2 * np.repeat(
-            anchor_grid[i], h * w, axis=0)
-        row_ind += length
-    return outs
-
-def post_process_opencv(outputs,model_h,model_w,img_h,img_w,thred_nms,thred_cond):
-    conf = outputs[:,4].tolist()
-    c_x = outputs[:,0]/model_w*img_w
-    c_y = outputs[:,1]/model_h*img_h
-    w  = outputs[:,2]/model_w*img_w
-    h  = outputs[:,3]/model_h*img_h
-    p_cls = outputs[:,5:]
-    if len(p_cls.shape)==1:
-        p_cls = np.expand_dims(p_cls,1)
-    cls_id = np.argmax(p_cls,axis=1)
-
-    p_x1 = np.expand_dims(c_x-w/2,-1)
-    p_y1 = np.expand_dims(c_y-h/2,-1)
-    p_x2 = np.expand_dims(c_x+w/2,-1)
-    p_y2 = np.expand_dims(c_y+h/2,-1)
-    areas = np.concatenate((p_x1,p_y1,p_x2,p_y2),axis=-1)
-    
-    areas = areas.tolist()
-    ids = cv2.dnn.NMSBoxes(areas,conf,thred_cond,thred_nms)
-    if len(ids)>0:
-        return  np.array(areas)[ids],np.array(conf)[ids],cls_id[ids]
-    else:
-        return [],[],[]
-        
-def infer_img(img0,net,model_h,model_w,nl,na,stride,anchor_grid,thred_nms=0.4,thred_cond=0.5):
-    # 图像预处理
-    img = cv2.resize(img0, (model_w,model_h), interpolation=cv2.INTER_AREA)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img = img.astype(np.float32) / 255.0
-    blob = np.expand_dims(np.transpose(img, (2, 0, 1)), axis=0)
-
-    # 模型推理
-    outs = net.run(None, {net.get_inputs()[0].name: blob})[0].squeeze(axis=0)
-
-    # 输出坐标矫正
-    outs = cal_outputs(outs,nl,na,model_w,model_h,anchor_grid,stride)
-
-    # 检测框计算
-    img_h,img_w,_ = np.shape(img0)
-    boxes,confs,ids = post_process_opencv(outs,model_h,model_w,img_h,img_w,thred_nms,thred_cond)
-
-    return  boxes,confs,ids
-
-def video_process():
-    # 模型加载
-    model_pb_path = "best.onnx"
-    so = ort.SessionOptions()
-    net = ort.InferenceSession(model_pb_path, so)
-    # 标签字典
-    dic_labels= {0:'crossing',
-            1:'red',
-            2:'green',
-            }
-    # 模型参数
-    model_h = 640
-    model_w = 640
-    nl = 3
-    na = 3
-    stride=[8.,16.,32.]
-    anchors = [[10, 13, 16, 30, 33, 23], [30, 61, 62, 45, 59, 119], [116, 90, 156, 198, 373, 326]]
-    anchor_grid = np.asarray(anchors, dtype=np.float32).reshape(nl, -1, 2)
-    video = '/home/jerryshek/work/yolov5/video_outdoor.mp4'
+    det = Detector(opt)
+    video = 0
     cap = cv2.VideoCapture(video)
-    flag_det = True
-    cnt = 5
+    dic_labels= {0:'crossing',
+            1:'green',
+            2:'red',
+            }
+    original_fps = cap.get(cv2.CAP_PROP_FPS)  # 原始视频的帧率
+    frame_time = 1 / original_fps  # 每帧的时间间隔
+
+    total_frames_processed = 0
+    total_time_spent = 0
+    speak_time = time.time()
+
     while True:
-        success, img0 = cap.read()
-        if cnt != 0:
-            cnt -= 1
-            continue
-        else:
-            cnt = 20
+        start_time = time.time()
+        success, image = cap.read()
+
+        shape = (det.img_size, det.img_size)
         if success:
-            if flag_det:
-                t1 = time.time()
-                det_boxes,scores,ids = infer_img(img0,net,model_h,model_w,nl,na,stride,anchor_grid,thred_nms=0.3,thred_cond=0.5)
-                t2 = time.time()
-                for box,score,id in zip(det_boxes,scores,ids):
-                    label = '%s:%.2f'%(dic_labels[id],score)
-                    plot_one_box(box.astype(np.int16), img0, color=(255,0,0), label=label, line_thickness=None)
-                str_FPS = "FPS: %.2f"%(1./(t2-t1))
-                cv2.putText(img0,str_FPS,(50,50),cv2.FONT_HERSHEY_COMPLEX,1,(0,255,0),3)
-            cv2.imshow("video",img0)
+            img, pred_boxes, pred_confes, pred_classes = det.detect(image)
+            detected = []
+            for box,score,id in zip(pred_boxes, pred_confes, pred_classes):
+                detected.append([id])
+                left, top, width, height = box[0], box[1], box[2], box[3]
+                box = (left, top, left + width, top + height)
+                box = np.squeeze(
+                scale_coords(shape, np.expand_dims(box, axis=0).astype("float"), img.shape[:2]).round(), axis=0).astype(
+                "int")
+                label = '%s:%.2f'%(dic_labels[id],score)
+                plot_one_box(box, img, color=(255,0,0), label=label, line_thickness=None)
+                cv2.imshow("video",img)
+            if time.time() - speak_time > 2 and len(set(detected)) > 0:
+                for class_id in set(detected):
+                    engine.say(dic_labels[class_id])
+                    engine.runAndWait()
+                speak_time = time.time()
+        end_time = time.time()
+        processing_time = end_time - start_time
+        total_frames_processed += 1
+        total_time_spent += processing_time
+
+        if processing_time > frame_time:
+            skip_count = int(processing_time // frame_time)
+            for _ in range(skip_count):
+                cap.read()
+
         key=cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             break
-        elif key & 0xFF == ord('s'):
-            flag_det = not flag_det
-            print(flag_det)
-            
-    cap.release() 
-    
-if __name__ == "__main__":
-    video_process()
+    cap.release()
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--weights', nargs='+', type=str, default='best.onnx', help='onnx path(s)')
+    parser.add_argument('--img', type=str, default='../models/nan.jpg', help='source')  # file/folder, 0 for webcam
+    parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
+    parser.add_argument('--conf-thres', type=float, default=0.25, help='object confidence threshold')
+    parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
+    parser.add_argument('--line-thickness', default=1, type=int, help='bounding box thickness (pixels)')
+    parser.add_argument('--hide-labels', default=False, action='store_true', help='hide labels')
+    parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
+    opt = parser.parse_args()
+    main(opt)

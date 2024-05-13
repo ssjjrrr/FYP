@@ -32,7 +32,6 @@ def on_connect(client, userdata, flags, rc):
 
 def iot_process():
     
-    # 三元素（iot后台获取）
     ProductKey = 'k0mhlroR224'
     DeviceName = 'wyy1'
     DeviceSecret = "2b1536dbf3227336c6bd63a8a5c4cedf"
@@ -54,10 +53,10 @@ def iot_process():
     while True:
         time.sleep(2)
         
-        CPU_temp = float(rpi.getCPUtemperature())  # 温度   ℃
-        CPU_usage = float(rpi.getCPUuse())         # 占用率 %
+        CPU_temp = float(rpi.getCPUtemperature())
+        CPU_usage = float(rpi.getCPUuse()) 
         
-        latitude, longitude = Get_position() # latitude and longitude
+        latitude, longitude = Get_position() # 地理信息
     
         # 构建与云端模型一致的消息结构
         updateMsn = {
@@ -68,7 +67,7 @@ def iot_process():
         JsonUpdataMsn = aliLink.Alink(updateMsn)
         print(JsonUpdataMsn)
 
-        mqtt.push(POST,JsonUpdataMsn) # 定时向阿里云IOT推送我们构建好的Alink协议数据
+        mqtt.push(POST,JsonUpdataMsn) # 定时向阿里云IOT推送数据
 
 
 if __name__ == "__main__":
